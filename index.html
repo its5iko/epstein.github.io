@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <title>3D Survival - Ucieczka</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; }
+        #overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8); display: flex; flex-direction: column;
+            justify-content: center; align-items: center; color: white; z-index: 10;
+        }
+        #ui {
+            position: absolute; top: 20px; left: 20px; color: #ff0000;
+            font-size: 20px; pointer-events: none; text-shadow: 2px 2px #000;
+        }
+        button {
+            padding: 15px 30px; font-size: 20px; cursor: pointer;
+            background: #ff0000; border: none; color: white; border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="ui">DYSTANS: <span id="dist">0</span>m</div>
+    
+    <div id="overlay">
+        <h1>UCIECZKA 3D</h1>
+        <p>Użyj STRZAŁEK lub WSAD do poruszania się</p>
+        <button onclick="startGame()">START</button>
+    </div>
+
+    <video id="music" loop style="display:none">
+        <source src="video1.mp4" type="video/mp4">
+    </video>
+
+    <script type="module">
+        import * as THREE from 'https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.module.min.js';
+
+        let scene, camera, renderer, player, enemy, clock;
+        let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
+        let gameRunning = false;
+
+        function init() {
+            // Scena i Kamera
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x050505);
+            scene.fog = new THREE.Fog(0x050505, 1, 15);
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            // Światło
+            const light = new THREE.PointLight(0xffffff, 10, 20);
+            scene.add(light);
+            const ambient = new THREE.AmbientLight(0x404040, 0.5);
+            scene.add(ambient);
+
+            // Podłoga (Profesjonalna siatka 3D)
+            const grid = new THREE.GridHelper(100, 100, 0xff0000, 0x222222);
+            scene.add(grid);
+
+            // Gracz (Niewidzialny punkt, kamera go śledzi)
+            player = new THREE.Group();
+            player.position.set(0, 1, 0);
+            scene.add(player);
+            player.add(light); // Światło podąża za graczem
+
+            // Przeciwnik (photo1.png na płaszczyźnie 3D)
+            const texture = new THREE.TextureLoader().load('photo1.png');
+            const enemyMat = new THREE.MeshStandardMaterial({ map: texture, transparent: true, side: THREE.DoubleSide });
+            const enemyGeo = new THREE.PlaneGeometry(2, 2);
+            enemy = new THREE.Mesh(enemyGeo, enemyMat);
+            enemy.position.set(10, 1, -10);
+            scene.add(enemy);
+
+            clock = new THREE.Clock();
+
+            window.addEventListener('keydown', (e) => handleKeys(e.code, true));
+            window.addEventListener('keyup', (e) => handleKeys(e.code, false));
+            
+            animate();
+        }
+
+        function handleKeys(code, state) {
+            if (code === 'KeyW' || code === 'ArrowUp') moveForward = state;
+            if (code === 'KeyS' || code === 'ArrowDown') moveBackward = state;
+            if (code === 'KeyA' || code === 'ArrowLeft') moveLeft = state;
+            if (code === 'KeyD' || code === 'ArrowRight') moveRight = state;
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            if (!gameRunning) return;
+
+            const delta = clock.getDelta();
+            const speed = 5 * delta;
+
+            // Ruch gracza
+            if (moveForward) player.position.z -= speed;
+            if (moveBackward) player.position.z += speed;
+            if (moveLeft) player.position.x -= speed;
+            if (moveRight) player.position.x += speed;
+
+            // Kamera śledząca
+            camera.position.set(player.position.x, player.position.y + 1, player.position.z + 4);
+            camera.lookAt(player.position);
+
+            // AI Przeciwnika - lewituje i zawsze patrzy na gracza
+            enemy.lookAt(player.position);
+            const dir = new THREE.Vector3().subVectors(player.position, enemy.position).normalize();
+            enemy.position.add(dir.multiplyScalar(3 * delta)); // Prędkość wroga
+
+            // Dystans i Kolizja
+            const dist = player.position.distanceTo(enemy.position);
+            document.getElementById('dist').innerText = Math.floor(dist);
+
+            if (dist < 1.2) {
+                gameRunning = false;
+                alert("ZŁAPANY!");
+                location.reload();
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        window.startGame = function() {
+            document.getElementById('overlay').style.display = 'none';
+            document.getElementById('music').play();
+            gameRunning = true;
+            init();
+        }
+    </script>
+</body>
+</html>
