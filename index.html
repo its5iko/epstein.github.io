@@ -2,7 +2,7 @@
 <html lang="pl">
 <head>
     <meta charset="UTF-8">
-    <title>3D Survival Fix</title>
+    <title>3D Survival - Balanced</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: 'Courier New', monospace; }
         #crosshair {
@@ -25,11 +25,11 @@
 <body>
 
     <div id="crosshair"></div>
-    <div id="ui">SYSTEM: ONLINE | DISTANCE: <span id="dist">0</span>m</div>
+    <div id="ui">SYSTEM: ONLINE | DYSTANS: <span id="dist">0</span>m</div>
     
     <div id="overlay">
-        <h1>MAPA SKALOWANA...</h1>
-        <p>[ KLIKNIJ, ABY WEJŚĆ ]</p>
+        <h1 style="letter-spacing: 10px;">ZALADOWANO</h1>
+        <p>[ KLIKNIJ, ABY ROZPOCZAC ]</p>
     </div>
 
     <video id="music-video" loop><source src="video1.mp4" type="video/mp4"></video>
@@ -50,15 +50,21 @@
 
         let scene, camera, renderer, controls, enemy, clock;
         let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
+        
         const velocity = new THREE.Vector3();
         const direction = new THREE.Vector3();
 
+        // --- USTAWIENIA PRĘDKOŚCI ---
+        const WALK_SPEED = 40.0;  // Zmniejszono ze 150
+        const ENEMY_SPEED = 1.8; // Zmniejszono z 4
+        const PLAYER_HEIGHT = 0.8; // Niższa kamera, by nie czuć się gigantem
+
         function init() {
             scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x050505);
-            scene.fog = new THREE.Fog(0x050505, 1, 50);
+            scene.background = new THREE.Color(0x020202);
+            scene.fog = new THREE.Fog(0x020202, 1, 40);
 
-            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.05, 1000);
             
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setPixelRatio(window.devicePixelRatio);
@@ -66,47 +72,36 @@
             document.body.appendChild(renderer.domElement);
 
             controls = new PointerLockControls(camera, document.body);
-            document.getElementById('overlay').addEventListener('click', () => {
-                controls.lock();
-            });
+            document.getElementById('overlay').addEventListener('click', () => controls.lock());
 
             controls.addEventListener('lock', () => {
                 document.getElementById('overlay').style.display = 'none';
                 document.getElementById('music-video').play();
             });
 
-            // ŚWIATŁO - Zwiększone, żeby widzieć mapę
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
-            scene.add(ambientLight);
-            
-            const flashlight = new THREE.PointLight(0xffffff, 200, 50);
-            camera.add(flashlight);
+            // OŚWIETLENIE
+            scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+            const pointLight = new THREE.PointLight(0xffffff, 50, 20);
+            camera.add(pointLight);
             scene.add(camera);
 
-            // ŁADOWANIE MAPY Z POPRAWKĄ SKALOWANIA
+            // MAPA
             const loader = new GLTFLoader();
             loader.load('map.glb', (gltf) => {
                 const model = gltf.scene;
                 
-                // Automatyczne skalowanie (jeśli mapa jest ogromna, zmniejszamy ją)
+                // Automatyczne ustawienie na środku i na ziemi
                 const box = new THREE.Box3().setFromObject(model);
-                const size = box.getSize(new THREE.Vector3());
-                const maxDim = Math.max(size.x, size.y, size.z);
-                const scale = 50 / maxDim; // Skalujemy tak, by mapa miała rozsądny rozmiar
-                model.scale.set(scale, scale, scale);
-                
-                // Centrowanie mapy pod nogami
-                model.position.y = 0;
+                model.position.y = -box.min.y; 
                 scene.add(model);
-                console.log("Mapa wczytana i przeskalowana");
             });
 
-            // PRZECIWNIK
+            // PRZECIWNIK (photo1.png)
             const texLoader = new THREE.TextureLoader();
             texLoader.load('photo1.png', (texture) => {
-                const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true });
-                enemy = new THREE.Mesh(new THREE.PlaneGeometry(3, 3), material);
-                enemy.position.set(10, 1.5, -10);
+                const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, side: THREE.DoubleSide });
+                enemy = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.5), material);
+                enemy.position.set(5, 0.75, -5); // Startuje bliżej, ale wolniej
                 scene.add(enemy);
             });
 
@@ -129,6 +124,8 @@
 
             if (controls.isLocked) {
                 const delta = clock.getDelta();
+
+                // Fizyka gracza
                 velocity.x -= velocity.x * 10.0 * delta;
                 velocity.z -= velocity.z * 10.0 * delta;
 
@@ -136,24 +133,27 @@
                 direction.x = Number(moveRight) - Number(moveLeft);
                 direction.normalize();
 
-                if (moveForward || moveBackward) velocity.z -= direction.z * 150.0 * delta;
-                if (moveLeft || moveRight) velocity.x -= direction.x * 150.0 * delta;
+                if (moveForward || moveBackward) velocity.z -= direction.z * WALK_SPEED * delta;
+                if (moveLeft || moveRight) velocity.x -= direction.x * WALK_SPEED * delta;
 
                 controls.moveRight(-velocity.x * delta);
                 controls.moveForward(-velocity.z * delta);
 
-                // Gracz nie może spaść ani latać (stała wysokość)
-                camera.position.y = 1.6;
+                camera.position.y = PLAYER_HEIGHT;
 
+                // AI Przeciwnika
                 if (enemy) {
                     enemy.lookAt(camera.position);
                     const enemyDir = new THREE.Vector3().subVectors(camera.position, enemy.position).normalize();
-                    enemy.position.add(enemyDir.multiplyScalar(4 * delta));
+                    enemyDir.y = 0; // Przeciwnik trzyma się ziemi
+                    enemy.position.add(enemyDir.multiplyScalar(ENEMY_SPEED * delta));
+
                     const dist = camera.position.distanceTo(enemy.position);
                     document.getElementById('dist').innerText = Math.floor(dist);
-                    if (dist < 1.8) {
+
+                    if (dist < 0.8) {
                         controls.unlock();
-                        alert("KONIEC GRY");
+                        alert("ZŁAPANY!");
                         location.reload();
                     }
                 }
