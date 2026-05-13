@@ -2,42 +2,56 @@
 <html lang="pl">
 <head>
     <meta charset="UTF-8">
-    <title>3D Horror - map.glb</title>
+    <title>epstein</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
+        body { margin: 0; overflow: hidden; background: #000; font-family: 'Courier New', monospace; }
         #crosshair {
             position: absolute; top: 50%; left: 50%; width: 10px; height: 10px;
-            border: 1px solid rgba(255,255,255,0.5); border-radius: 50%;
-            transform: translate(-50%, -50%); pointer-events: none;
+            border: 1px solid rgba(0,255,0,0.5); border-radius: 50%;
+            transform: translate(-50%, -50%); pointer-events: none; z-index: 100;
         }
         #ui {
-            position: absolute; bottom: 20px; left: 20px; color: #f00;
-            font-family: 'Courier New', monospace; font-size: 18px;
+            position: absolute; bottom: 20px; left: 20px; color: #0f0;
+            font-size: 16px; text-shadow: 2px 2px #000; z-index: 100;
         }
         #overlay {
-            position: absolute; width: 100%; height: 100%; background: rgba(0,0,0,0.9);
+            position: absolute; width: 100%; height: 100%; background: #000;
             display: flex; flex-direction: column; justify-content: center;
-            align-items: center; color: white; z-index: 20; cursor: pointer;
+            align-items: center; color: #0f0; z-index: 200; cursor: pointer;
+            text-align: center;
         }
+        /* Całkowite ukrycie wideo */
+        #music-video { display: none !important; }
     </style>
 </head>
 <body>
 
     <div id="crosshair"></div>
-    <div id="ui">SYSTEM STATUS: <span id="dist">0</span>m TO TARGET</div>
+    <div id="ui">SYSTEM: ONLINE | DISTANCE: <span id="dist">0</span>m</div>
     
     <div id="overlay">
-        <h1>MAPA ZAŁADOWANA: map.glb</h1>
-        <p>KLIKNIJ, ABY WEJŚĆ DO GRY</p>
-        <p>(WSAD - Ruch | MYSZ - Rozglądanie się)</p>
+        <h1 style="font-size: 40px; letter-spacing: 5px;">MAPA: map.glb</h1>
+        <p>[ KLIKNIJ, ABY ZACZĄĆ ]</p>
+        <p style="color: #444; font-size: 12px; margin-top: 20px;">WSAD + MYSZ</p>
     </div>
 
-    <video id="music" loop><source src="video1.mp4" type="video/mp4"></video>
+    <video id="music-video" loop>
+        <source src="video1.mp4" type="video/mp4">
+    </video>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
 
     <script type="module">
-        import * as THREE from 'https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.module.min.js';
-        import { GLTFLoader } from 'https://unpkg.com/three@0.160.0/examples/jsm/loaders/GLTFLoader.js';
-        import { PointerLockControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/PointerLockControls.js';
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 
         let scene, camera, renderer, controls, enemy, clock;
         let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
@@ -45,20 +59,21 @@
         const direction = new THREE.Vector3();
 
         const overlay = document.getElementById('overlay');
-        const music = document.getElementById('music');
+        const music = document.getElementById('music-video');
 
         function init() {
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x020202);
-            scene.fog = new THREE.Fog(0x020202, 2, 20);
+            scene.fog = new THREE.Fog(0x020202, 1, 35);
 
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-            
+            camera.position.y = 1.6; // Wysokość wzroku gracza
+
             renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
             renderer.setSize(window.innerWidth, window.innerHeight);
             document.body.appendChild(renderer.domElement);
 
-            // Sterowanie myszką (FPS)
             controls = new PointerLockControls(camera, document.body);
             
             overlay.addEventListener('click', () => {
@@ -75,54 +90,48 @@
                 music.pause();
             });
 
-            // Światło (Latarka gracza)
-            const flashlight = new THREE.SpotLight(0xffffff, 50, 20, Math.PI/6, 0.5);
+            // Światło
+            scene.add(new THREE.AmbientLight(0xffffff, 0.3));
+            const flashlight = new THREE.SpotLight(0xffffff, 80, 40, Math.PI/4, 0.3);
             camera.add(flashlight);
-            flashlight.target = camera; // Świeci tam gdzie patrzymy
+            flashlight.target = camera;
             scene.add(camera);
 
-            const ambient = new THREE.AmbientLight(0x404040, 0.2);
-            scene.add(ambient);
-
-            // Ładowanie mapy GLB
+            // Ładowanie mapy
             const loader = new GLTFLoader();
             loader.load('map.glb', (gltf) => {
                 scene.add(gltf.scene);
-                console.log("Mapa załadowana!");
-            }, undefined, (error) => {
-                console.error("Błąd ładowania mapy:", error);
+                console.log("Mapa działa!");
             });
 
             // Przeciwnik (photo1.png)
-            const texture = new THREE.TextureLoader().load('photo1.png');
-            const enemyMat = new THREE.MeshBasicMaterial({ map: texture, transparent: true });
-            enemy = new THREE.Mesh(new THREE.PlaneGeometry(2.5, 2.5), enemyMat);
-            enemy.position.set(0, 1.25, -15);
-            scene.add(enemy);
+            const texLoader = new THREE.TextureLoader();
+            texLoader.load('photo1.png', (texture) => {
+                const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true });
+                enemy = new THREE.Mesh(new THREE.PlaneGeometry(2.5, 2.5), material);
+                enemy.position.set(15, 1.25, -15);
+                scene.add(enemy);
+            });
 
             clock = new THREE.Clock();
+            
+            const onKeyDown = (e) => {
+                if (e.code === 'KeyW') moveForward = true;
+                if (e.code === 'KeyS') moveBackward = true;
+                if (e.code === 'KeyA') moveLeft = true;
+                if (e.code === 'KeyD') moveRight = true;
+            };
+            const onKeyUp = (e) => {
+                if (e.code === 'KeyW') moveForward = false;
+                if (e.code === 'KeyS') moveBackward = false;
+                if (e.code === 'KeyA') moveLeft = false;
+                if (e.code === 'KeyD') moveRight = false;
+            };
+
             window.addEventListener('keydown', onKeyDown);
             window.addEventListener('keyup', onKeyUp);
             
             animate();
-        }
-
-        function onKeyDown(e) {
-            switch(e.code) {
-                case 'KeyW': moveForward = true; break;
-                case 'KeyS': moveBackward = true; break;
-                case 'KeyA': moveLeft = true; break;
-                case 'KeyD': moveRight = true; break;
-            }
-        }
-
-        function onKeyUp(e) {
-            switch(e.code) {
-                case 'KeyW': moveForward = false; break;
-                case 'KeyS': moveBackward = false; break;
-                case 'KeyA': moveLeft = false; break;
-                case 'KeyD': moveRight = false; break;
-            }
         }
 
         function animate() {
@@ -131,7 +140,6 @@
             if (controls.isLocked) {
                 const delta = clock.getDelta();
 
-                // Fizyka ruchu FPS
                 velocity.x -= velocity.x * 10.0 * delta;
                 velocity.z -= velocity.z * 10.0 * delta;
 
@@ -139,28 +147,28 @@
                 direction.x = Number(moveRight) - Number(moveLeft);
                 direction.normalize();
 
-                if (moveForward || moveBackward) velocity.z -= direction.z * 100.0 * delta;
-                if (moveLeft || moveRight) velocity.x -= direction.x * 100.0 * delta;
+                if (moveForward || moveBackward) velocity.z -= direction.z * 120.0 * delta;
+                if (moveLeft || moveRight) velocity.x -= direction.x * 120.0 * delta;
 
                 controls.moveRight(-velocity.x * delta);
                 controls.moveForward(-velocity.z * delta);
 
-                // AI Przeciwnika
-                enemy.lookAt(camera.position);
-                const enemyDir = new THREE.Vector3().subVectors(camera.position, enemy.position).normalize();
-                enemy.position.add(enemyDir.multiplyScalar(3.5 * delta));
+                if (enemy) {
+                    enemy.lookAt(camera.position);
+                    const enemyDir = new THREE.Vector3().subVectors(camera.position, enemy.position).normalize();
+                    enemyDir.y = 0;
+                    enemy.position.add(enemyDir.multiplyScalar(3.8 * delta));
 
-                // Dystans
-                const dist = camera.position.distanceTo(enemy.position);
-                document.getElementById('dist').innerText = Math.floor(dist);
+                    const dist = camera.position.distanceTo(enemy.position);
+                    document.getElementById('dist').innerText = Math.floor(dist);
 
-                if (dist < 1.5) {
-                    controls.unlock();
-                    alert("ZŁAPANY PRZEZ PHOTO1.PNG");
-                    location.reload();
+                    if (dist < 1.6) {
+                        controls.unlock();
+                        alert("ZŁAPANY!");
+                        location.reload();
+                    }
                 }
             }
-
             renderer.render(scene, camera);
         }
 
