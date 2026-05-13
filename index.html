@@ -2,22 +2,22 @@
 <html lang="pl">
 <head>
     <meta charset="UTF-8">
-    <title>3D Survival - Balanced</title>
+    <title>3D Survival - Dark Mode</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: 'Courier New', monospace; }
         #crosshair {
-            position: absolute; top: 50%; left: 50%; width: 6px; height: 6px;
-            background: rgba(0,255,0,0.8); border-radius: 50%;
+            position: absolute; top: 50%; left: 50%; width: 4px; height: 4px;
+            background: rgba(255, 0, 0, 0.5); border-radius: 50%;
             transform: translate(-50%, -50%); pointer-events: none; z-index: 100;
         }
         #ui {
-            position: absolute; bottom: 20px; left: 20px; color: #0f0;
-            font-size: 16px; text-shadow: 2px 2px #000; z-index: 100;
+            position: absolute; bottom: 20px; left: 20px; color: #330000;
+            font-size: 12px; text-transform: uppercase; z-index: 100;
         }
         #overlay {
             position: absolute; width: 100%; height: 100%; background: #000;
             display: flex; flex-direction: column; justify-content: center;
-            align-items: center; color: #0f0; z-index: 200; cursor: pointer;
+            align-items: center; color: #600; z-index: 200; cursor: pointer;
         }
         #music-video { display: none !important; }
     </style>
@@ -25,11 +25,11 @@
 <body>
 
     <div id="crosshair"></div>
-    <div id="ui">SYSTEM: ONLINE | DYSTANS: <span id="dist">0</span>m</div>
+    <div id="ui">DIST: <span id="dist">0</span>m</div>
     
     <div id="overlay">
-        <h1 style="letter-spacing: 10px;">ZALADOWANO</h1>
-        <p>[ KLIKNIJ, ABY ROZPOCZAC ]</p>
+        <h1 style="letter-spacing: 8px; filter: blur(1px);">SYSTEM ERROR</h1>
+        <p>[ INICJUJ PROTOKÓŁ ]</p>
     </div>
 
     <video id="music-video" loop><source src="video1.mp4" type="video/mp4"></video>
@@ -48,26 +48,28 @@
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
         import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 
-        let scene, camera, renderer, controls, enemy, clock;
+        let scene, camera, renderer, controls, enemy, clock, mapModel;
         let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
         
         const velocity = new THREE.Vector3();
         const direction = new THREE.Vector3();
+        const raycaster = new THREE.Raycaster();
 
-        // --- USTAWIENIA PRĘDKOŚCI ---
-        const WALK_SPEED = 40.0;  // Zmniejszono ze 150
-        const ENEMY_SPEED = 1.8; // Zmniejszono z 4
-        const PLAYER_HEIGHT = 0.8; // Niższa kamera, by nie czuć się gigantem
+        // --- PARAMETRY MROKU I SKALI ---
+        const WALK_SPEED = 12.0;     
+        const ENEMY_SPEED = 0.3;    // Bardzo wolny pościg
+        const PLAYER_HEIGHT = 0.15; // Jeszcze niżej
+        const COLLISION_DIST = 0.25;
 
         function init() {
             scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x020202);
-            scene.fog = new THREE.Fog(0x020202, 1, 40);
+            scene.background = new THREE.Color(0x000000);
+            // Gęsta, czarna mgła - widać tylko na 7 metrów
+            scene.fog = new THREE.Fog(0x000000, 0.1, 7);
 
-            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.05, 1000);
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.01, 100);
             
             renderer = new THREE.WebGLRenderer({ antialias: true });
-            renderer.setPixelRatio(window.devicePixelRatio);
             renderer.setSize(window.innerWidth, window.innerHeight);
             document.body.appendChild(renderer.domElement);
 
@@ -79,34 +81,41 @@
                 document.getElementById('music-video').play();
             });
 
-            // OŚWIETLENIE
-            scene.add(new THREE.AmbientLight(0xffffff, 0.5));
-            const pointLight = new THREE.PointLight(0xffffff, 50, 20);
-            camera.add(pointLight);
+            // --- OŚWIETLENIE ---
+            // Prawie całkowity brak światła otoczenia
+            const ambient = new THREE.AmbientLight(0xffffff, 0.02); 
+            scene.add(ambient);
+
+            // Słaba, mrugająca latarka
+            const flashlight = new THREE.SpotLight(0xffffff, 2);
+            flashlight.distance = 8;
+            flashlight.angle = Math.PI / 6;
+            flashlight.penumbra = 0.8;
+            flashlight.decay = 2;
+            camera.add(flashlight);
+            flashlight.target = camera; // Świeci tam gdzie patrzysz
             scene.add(camera);
 
-            // MAPA
+            // Mapa
             const loader = new GLTFLoader();
             loader.load('map.glb', (gltf) => {
-                const model = gltf.scene;
-                
-                // Automatyczne ustawienie na środku i na ziemi
-                const box = new THREE.Box3().setFromObject(model);
-                model.position.y = -box.min.y; 
-                scene.add(model);
+                mapModel = gltf.scene;
+                // Ustawiamy mapę tak, by jej spód był na zerze
+                const box = new THREE.Box3().setFromObject(mapModel);
+                mapModel.position.y = -box.min.y;
+                scene.add(mapModel);
             });
 
-            // PRZECIWNIK (photo1.png)
+            // Przeciwnik
             const texLoader = new THREE.TextureLoader();
             texLoader.load('photo1.png', (texture) => {
-                const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, side: THREE.DoubleSide });
-                enemy = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.5), material);
-                enemy.position.set(5, 0.75, -5); // Startuje bliżej, ale wolniej
+                const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true });
+                enemy = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 0.4), material);
+                enemy.position.set(4, 0.2, -4);
                 scene.add(enemy);
             });
 
             clock = new THREE.Clock();
-            
             const onKey = (e, state) => {
                 if (e.code === 'KeyW') moveForward = state;
                 if (e.code === 'KeyS') moveBackward = state;
@@ -119,13 +128,22 @@
             animate();
         }
 
+        function checkCollision() {
+            if (!mapModel) return false;
+            const moveDir = new THREE.Vector3();
+            camera.getWorldDirection(moveDir);
+            moveDir.y = 0;
+            moveDir.normalize();
+            raycaster.set(camera.position, moveDir);
+            const intersects = raycaster.intersectObject(mapModel, true);
+            return (intersects.length > 0 && intersects[0].distance < COLLISION_DIST);
+        }
+
         function animate() {
             requestAnimationFrame(animate);
 
             if (controls.isLocked) {
                 const delta = clock.getDelta();
-
-                // Fizyka gracza
                 velocity.x -= velocity.x * 10.0 * delta;
                 velocity.z -= velocity.z * 10.0 * delta;
 
@@ -133,27 +151,29 @@
                 direction.x = Number(moveRight) - Number(moveLeft);
                 direction.normalize();
 
-                if (moveForward || moveBackward) velocity.z -= direction.z * WALK_SPEED * delta;
-                if (moveLeft || moveRight) velocity.x -= direction.x * WALK_SPEED * delta;
+                if (moveForward && checkCollision()) {
+                    velocity.z = 0;
+                } else {
+                    if (moveForward || moveBackward) velocity.z -= direction.z * WALK_SPEED * delta;
+                    if (moveLeft || moveRight) velocity.x -= direction.x * WALK_SPEED * delta;
+                }
 
                 controls.moveRight(-velocity.x * delta);
                 controls.moveForward(-velocity.z * delta);
-
                 camera.position.y = PLAYER_HEIGHT;
 
-                // AI Przeciwnika
                 if (enemy) {
                     enemy.lookAt(camera.position);
                     const enemyDir = new THREE.Vector3().subVectors(camera.position, enemy.position).normalize();
-                    enemyDir.y = 0; // Przeciwnik trzyma się ziemi
+                    enemyDir.y = 0;
                     enemy.position.add(enemyDir.multiplyScalar(ENEMY_SPEED * delta));
 
                     const dist = camera.position.distanceTo(enemy.position);
-                    document.getElementById('dist').innerText = Math.floor(dist);
+                    document.getElementById('dist').innerText = dist.toFixed(1);
 
-                    if (dist < 0.8) {
+                    if (dist < 0.2) {
                         controls.unlock();
-                        alert("ZŁAPANY!");
+                        alert("CIEMNOŚĆ CIĘ POCHŁONĘŁA");
                         location.reload();
                     }
                 }
