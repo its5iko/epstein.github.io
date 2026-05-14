@@ -2,22 +2,21 @@
 <html lang="pl">
 <head>
     <meta charset="UTF-8">
-    <title>3D Survival - Position Fix</title>
+    <title>3D Survival - Podłoga Fix</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: 'Courier New', monospace; }
         #crosshair {
             position: absolute; top: 50%; left: 50%; width: 4px; height: 4px;
-            background: rgba(255, 0, 0, 0.5); border-radius: 50%;
-            transform: translate(-50%, -50%); pointer-events: none; z-index: 100;
+            background: red; border-radius: 50%; transform: translate(-50%, -50%);
+            pointer-events: none; z-index: 100;
         }
         #ui {
-            position: absolute; bottom: 20px; left: 20px; color: #400;
-            font-size: 12px; z-index: 100;
+            position: absolute; bottom: 20px; left: 20px; color: #500; font-size: 12px;
         }
         #overlay {
             position: absolute; width: 100%; height: 100%; background: #000;
             display: flex; flex-direction: column; justify-content: center;
-            align-items: center; color: #800; z-index: 200; cursor: pointer;
+            align-items: center; color: #f00; z-index: 200; cursor: pointer;
         }
         #music-video { display: none !important; }
     </style>
@@ -25,11 +24,11 @@
 <body>
 
     <div id="crosshair"></div>
-    <div id="ui">X-POS: <span id="pos-info">0</span> | DIST: <span id="dist">0</span>m</div>
+    <div id="ui">X: <span id="posX">0</span> | Y: <span id="posY">0</span> | DIST: <span id="dist">0</span>m</div>
     
     <div id="overlay">
-        <h1>RE-POZYCJONOWANIE...</h1>
-        <p>[ KLIKNIJ, ABY WEJŚĆ ]</p>
+        <h1>KALIBRACJA POZYCJI...</h1>
+        <p>[ KLIKNIJ, ABY ROZPOCZĄĆ ]</p>
     </div>
 
     <video id="music-video" loop><source src="video1.mp4" type="video/mp4"></video>
@@ -55,21 +54,21 @@
         const direction = new THREE.Vector3();
         const raycaster = new THREE.Raycaster();
 
-        // --- PARAMETRY ---
-        const WALK_SPEED = 10.0;     
-        const ENEMY_SPEED = 0.25;    
-        const PLAYER_HEIGHT = 0.12; // Twoja wysokość nad podłogą
-        const COLLISION_DIST = 0.2;
+        // --- PARAMETRY (Zmienione, byś nie był pod mapą) ---
+        const WALK_SPEED = 8.0;     
+        const ENEMY_SPEED = 0.2;    
+        const PLAYER_HEIGHT = 0.5; // Wyżej, by nie zapadać się w podłogę
+        const COLLISION_DIST = 0.3;
 
         function init() {
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x000000);
-            scene.fog = new THREE.Fog(0x000000, 0.1, 6);
+            scene.fog = new THREE.Fog(0x000000, 0.1, 10);
 
-            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.001, 100);
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.01, 500);
             
-            // STARTUJEMY NIECO DALEJ OD ŚRODKA (0,0,0)
-            camera.position.set(2, PLAYER_HEIGHT, 2);
+            // STARTUJEMY WYSOKO I DALEKO, by widzieć mapę z góry na starcie
+            camera.position.set(0, 2, 5);
 
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
@@ -83,37 +82,34 @@
                 document.getElementById('music-video').play();
             });
 
-            // Oświetlenie
-            scene.add(new THREE.AmbientLight(0xffffff, 0.01));
-            const flashlight = new THREE.SpotLight(0xffffff, 1.5);
-            flashlight.distance = 6;
-            flashlight.angle = Math.PI / 7;
-            flashlight.decay = 2;
+            // Oświetlenie (Nieco mocniejsze na start)
+            scene.add(new THREE.AmbientLight(0xffffff, 0.05));
+            const flashlight = new THREE.SpotLight(0xffffff, 2);
+            flashlight.distance = 10;
+            flashlight.angle = Math.PI / 6;
             camera.add(flashlight);
             flashlight.target = camera;
             scene.add(camera);
 
-            // Mapa
+            // Ładowanie Mapy
             const loader = new GLTFLoader();
             loader.load('map.glb', (gltf) => {
                 mapModel = gltf.scene;
                 
-                // Centrujemy mapę i upewniamy się, że podłoga jest na Y = 0
+                // Automatyczne ustawienie pod nogami
                 const box = new THREE.Box3().setFromObject(mapModel);
-                const center = box.getCenter(new THREE.Vector3());
-                mapModel.position.x = -center.x;
-                mapModel.position.z = -center.z;
-                mapModel.position.y = -box.min.y; // To stawia podłogę modelu na Y=0
+                mapModel.position.y = -box.min.y; // Ustawia najniższy punkt mapy na Y=0
                 
                 scene.add(mapModel);
+                console.log("Mapa załadowana. Min Y modelu to: " + box.min.y);
             });
 
             // Przeciwnik
             const texLoader = new THREE.TextureLoader();
             texLoader.load('photo1.png', (texture) => {
-                const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true });
-                enemy = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.3), material);
-                enemy.position.set(0, 0.15, 0); // Startuje w centrum
+                const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, side: THREE.DoubleSide });
+                enemy = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.5), material);
+                enemy.position.set(2, 0.3, -2);
                 scene.add(enemy);
             });
 
@@ -163,7 +159,7 @@
                 controls.moveRight(-velocity.x * delta);
                 controls.moveForward(-velocity.z * delta);
                 
-                // WYMUSZENIE BYCIA NAD MAPĄ
+                // UTRZYMANIE WYSOKOŚCI
                 camera.position.y = PLAYER_HEIGHT;
 
                 if (enemy) {
@@ -174,11 +170,12 @@
 
                     const dist = camera.position.distanceTo(enemy.position);
                     document.getElementById('dist').innerText = dist.toFixed(1);
-                    document.getElementById('pos-info').innerText = camera.position.x.toFixed(1);
+                    document.getElementById('posX').innerText = camera.position.x.toFixed(1);
+                    document.getElementById('posY').innerText = camera.position.z.toFixed(1);
 
-                    if (dist < 0.15) {
+                    if (dist < 0.2) {
                         controls.unlock();
-                        alert("KONIEC");
+                        alert("PRZEGRANA");
                         location.reload();
                     }
                 }
